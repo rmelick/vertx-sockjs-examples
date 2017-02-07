@@ -78,7 +78,7 @@ public class SockJSClientSendTest {
 	@Test
 	public void testLargeRequestSingleFrame() throws Exception {
 		String vertxHost = "localhost";
-		int vertxPort = 8080;
+		int vertxPort = 8081;
 
 		// set up server
 		Vertx vertx = setupVertxSockjsServer(vertxHost, vertxPort, new FixedReplySocketHandler(Buffer.buffer("FIXED_REPLY")));
@@ -94,7 +94,7 @@ public class SockJSClientSendTest {
 		int approximateMessageKilobytes = 10;
 		session.sendMessage(new TextMessage(getLargeMessage(approximateMessageKilobytes)));
 		boolean allMessagesReceived = messageCountDown.await(10, TimeUnit.SECONDS);
-		assertEquals("Should not have received any errors", null, error.get());
+		assertEquals("Received incorrect error", "Transport error Connection reset by peer", error.get());
 		assertEquals("Wrong number of received messages", expectedMessages, receivedMessagesCounter.get());
 		assertFalse("Should not have received any messages within 10 seconds", allMessagesReceived);
 
@@ -107,7 +107,7 @@ public class SockJSClientSendTest {
 	@Test
 	public void testLargeRequestMultipleFrame() throws Exception {
 		String vertxHost = "localhost";
-		int vertxPort = 8080;
+		int vertxPort = 8082;
 
 		// set up server
 		Vertx vertx = setupVertxSockjsServer(vertxHost, vertxPort, new FixedReplySocketHandler(Buffer.buffer("FIXED_REPLY")));
@@ -141,7 +141,7 @@ public class SockJSClientSendTest {
 	@Test
 	public void testLargeResponseSingleFrame() throws Exception {
 		String vertxHost = "localhost";
-		int vertxPort = 8080;
+		int vertxPort = 8083;
 
 		// set up server
 		int approximateMessageKilobytes = 100;
@@ -236,9 +236,29 @@ public class SockJSClientSendTest {
 
 		@Override
 		public void handleMessage(WebSocketSession session, WebSocketMessage<?> message) throws Exception {
-			messageCountDown.countDown();
-			messageCounter.incrementAndGet();
-			super.handleMessage(session, message);
+			try {
+				messageCountDown.countDown();
+				messageCounter.incrementAndGet();
+				super.handleMessage(session, message);
+			} catch (Throwable t) {
+				error.set("Exception while processing message " + t.getMessage());
+				LOGGER.error(error.get(), t);
+				countDownAllMessages();
+			}
+		}
+
+		@Override
+		public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
+			error.set("Transport error " + exception.getMessage());
+			LOGGER.error(error.get(), exception);
+			countDownAllMessages();
+			super.handleTransportError(session, exception);
+		}
+
+		private void countDownAllMessages() {
+			for (int i = 0; i < messageCountDown.getCount(); i++) {
+				messageCountDown.countDown();
+			}
 		}
 
 		@Override
@@ -246,6 +266,7 @@ public class SockJSClientSendTest {
 			if (!CloseStatus.NORMAL.equalsCode(status)) {
 				error.set("Connection closed with non-normal status " + status);
 				LOGGER.error(error.get());
+				countDownAllMessages();
 			}
 			super.afterConnectionClosed(session, status);
 		}
