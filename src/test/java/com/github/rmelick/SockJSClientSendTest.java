@@ -91,7 +91,7 @@ public class SockJSClientSendTest {
 		WebSocketSession session = setupSpringSockjsClient(vertxHost, vertxPort, messageCountDown,
 				receivedMessagesCounter, error);
 
-		int approximateMessageKilobytes = 10;
+		int approximateMessageKilobytes = 10_000;
 		session.sendMessage(new TextMessage(getLargeMessage(approximateMessageKilobytes)));
 		messageCountDown.await(10, TimeUnit.SECONDS);
 		assertEquals("Received incorrect error", "Transport error Connection reset by peer", error.get());
@@ -170,7 +170,7 @@ public class SockJSClientSendTest {
 	@Test
 	public void testLargeResponseMultipleFrames() throws Exception {
 		String vertxHost = "localhost";
-		int vertxPort = 8083;
+		int vertxPort = 8084;
 
 		// set up server
 		int approximateMessageKilobytes = 100;
@@ -214,11 +214,6 @@ public class SockJSClientSendTest {
 		}
 		message.append("MESSAGE_END");
 		return message.toString();
-	}
-
-	private WebSocketSession setupSpringSockjsClient(String vertxHost, int vertxPort, CountDownLatch messageCountDown,
-			AtomicLong messageCounter) throws Exception {
-		return setupSpringSockjsClient(vertxHost, vertxPort, messageCountDown, messageCounter, new AtomicReference<>());
 	}
 
 	private WebSocketSession setupSpringSockjsClient(String vertxHost, int vertxPort, CountDownLatch messageCountDown,
