@@ -1,5 +1,6 @@
 package com.github.rmelick;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -7,6 +8,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+import com.google.common.base.Splitter;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
@@ -33,6 +35,7 @@ import org.springframework.web.socket.sockjs.client.Transport;
 import org.springframework.web.socket.sockjs.client.WebSocketTransport;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -41,6 +44,9 @@ import static org.junit.Assert.assertTrue;
 public class SockJSClientSendTest {
 	private static final Logger LOGGER = LoggerFactory.getLogger(SockJSClientSendTest.class);
 
+	/**
+	 * This test demonstrates a simple test, to make sure that the spring client and vertx server can communicate
+	 */
 	@Test
 	public void testSimpleRequest() throws Exception {
 		String vertxHost = "localhost";
@@ -63,8 +69,12 @@ public class SockJSClientSendTest {
 		vertx.close();
 	}
 
+	/**
+	 * This test shows requests that fail because the they are too large for the tomcat websocket to handle.
+	 * It shows that clients need to break up their messages into frames
+	 */
 	@Test
-	public void testLargeRequest() throws Exception {
+	public void testLargeRequestSingleFrame() throws Exception {
 		String vertxHost = "localhost";
 		int vertxPort = 8080;
 
@@ -72,13 +82,44 @@ public class SockJSClientSendTest {
 		Vertx vertx = setupVertxSockjsServer(vertxHost, vertxPort, new FixedReplySocketHandler(Buffer.buffer("FIXED_REPLY")));
 
 		// set up client
-		int expectedMessages = 1;
+		int expectedMessages = 0;
+		CountDownLatch messageCountDown = new CountDownLatch(1);
+		AtomicLong receivedMessagesCounter = new AtomicLong(0);
+		WebSocketSession session = setupSpringSockjsClient(vertxHost, vertxPort, messageCountDown, receivedMessagesCounter);
+
+		int approximateMessageKilobytes = 10;
+		session.sendMessage(new TextMessage(getLargeMessage(approximateMessageKilobytes)));
+		boolean allMessagesReceived = messageCountDown.await(10, TimeUnit.SECONDS);
+		assertFalse("Should not have received any messages within 10 seconds", allMessagesReceived);
+		assertEquals("Wrong number of received messages", expectedMessages, receivedMessagesCounter.get());
+
+		vertx.close();
+	}
+
+	/**
+	 * This test should succeed because the client has broken the large message up into smaller frames/pieces/chunks
+	 */
+	@Test
+	public void testLargeRequestMultipleFrame() throws Exception {
+		String vertxHost = "localhost";
+		int vertxPort = 8080;
+
+		// set up server
+		Vertx vertx = setupVertxSockjsServer(vertxHost, vertxPort, new FixedReplySocketHandler(Buffer.buffer("FIXED_REPLY")));
+
+
+		int approximateMessageKilobytes = 10;
+		List<TextMessage> multipleFrames = splitIntoMessages(getLargeMessage(approximateMessageKilobytes));
+
+		// set up client
+		int expectedMessages = multipleFrames.size();
 		CountDownLatch messageCountDown = new CountDownLatch(expectedMessages);
 		AtomicLong receivedMessagesCounter = new AtomicLong(0);
 		WebSocketSession session = setupSpringSockjsClient(vertxHost, vertxPort, messageCountDown, receivedMessagesCounter);
 
-		int approximateMessageKilobytes = 1;
-		session.sendMessage(new TextMessage(getLargeMessage(approximateMessageKilobytes)));
+		for (TextMessage frame : multipleFrames) {
+			session.sendMessage(frame);
+		}
 		boolean allMessagesReceived = messageCountDown.await(10, TimeUnit.SECONDS);
 		assertTrue("Did not receive expected messages within 10 seconds", allMessagesReceived);
 		assertEquals("Wrong number of received messages", expectedMessages, receivedMessagesCounter.get());
@@ -86,8 +127,19 @@ public class SockJSClientSendTest {
 		vertx.close();
 	}
 
+	private List<TextMessage> splitIntoMessages(String fullText) {
+		List<TextMessage> messages = new ArrayList<>();
+		List<String> splitStrings = new ArrayList<>(Splitter.fixedLength(1024).splitToList(fullText));
+		String last = splitStrings.remove(splitStrings.size() - 1);
+		for (String individualMessage : splitStrings) {
+			messages.add(new TextMessage(individualMessage, false));
+		}
+		messages.add(new TextMessage(last, true));
+		return messages;
+	}
+
 	private String getLargeMessage(int approximateMessageKilobytes) {
-		String oneKbData = "DATA_START" + StringUtils.repeat(".", 1024 - "DATA_STARTDATA_END".length()) + "DATA_END";
+		String oneKbData = "KB_START_" + StringUtils.repeat("d", 1024 - "KB_START__KB_END".length()) + "_KB_END";
 		StringBuilder message = new StringBuilder(approximateMessageKilobytes);
 		message.append("MESSAGE_START");
 		for (int count = 0; count < approximateMessageKilobytes; count++) {
