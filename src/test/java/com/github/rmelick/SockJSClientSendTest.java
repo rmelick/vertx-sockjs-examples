@@ -237,6 +237,9 @@ public class SockJSClientSendTest {
 		SockJSHandlerOptions options = new SockJSHandlerOptions().setHeartbeatInterval(2000);
 		SockJSHandler sockJSHandler = SockJSHandler.create(vertx, options);
 		sockJSHandler.socketHandler(vertxSocketHandler);
+		// TODO can we put wrap the SockJSHandler inside a custom handler that would support re-combining
+		// messages from incomplete frames before passing it to the SockJSHandler.  This way the sockjs
+		// code would see it as a single frame.
 		router.route("/myapp/*").handler(sockJSHandler);
 		HttpServerOptions httpServerOptions = new HttpServerOptions();
 		httpServerOptions.setLogActivity(true);
