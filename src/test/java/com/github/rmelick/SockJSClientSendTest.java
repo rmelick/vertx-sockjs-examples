@@ -93,10 +93,9 @@ public class SockJSClientSendTest {
 
 		int approximateMessageKilobytes = 10;
 		session.sendMessage(new TextMessage(getLargeMessage(approximateMessageKilobytes)));
-		boolean allMessagesReceived = messageCountDown.await(10, TimeUnit.SECONDS);
+		messageCountDown.await(10, TimeUnit.SECONDS);
 		assertEquals("Received incorrect error", "Transport error Connection reset by peer", error.get());
 		assertEquals("Wrong number of received messages", expectedMessages, receivedMessagesCounter.get());
-		assertFalse("Should not have received any messages within 10 seconds", allMessagesReceived);
 
 		vertx.close();
 	}
@@ -140,6 +139,36 @@ public class SockJSClientSendTest {
 	 */
 	@Test
 	public void testLargeResponseSingleFrame() throws Exception {
+		String vertxHost = "localhost";
+		int vertxPort = 8083;
+
+		// set up server
+		int approximateMessageKilobytes = 100;
+		Buffer largeReply = Buffer.buffer(getLargeMessage(approximateMessageKilobytes));
+		Vertx vertx = setupVertxSockjsServer(vertxHost, vertxPort, new FixedReplySocketHandler(largeReply));
+
+		// set up client
+		int expectedMessages = 1;
+		CountDownLatch messageCountDown = new CountDownLatch(expectedMessages);
+		AtomicLong receivedMessagesCounter = new AtomicLong(0);
+		AtomicReference<String> error = new AtomicReference<>();
+		WebSocketSession session = setupSpringSockjsClient(vertxHost, vertxPort, messageCountDown,
+				receivedMessagesCounter, error);
+
+		session.sendMessage(new TextMessage("test"));
+
+		boolean allMessagesReceived = messageCountDown.await(10, TimeUnit.SECONDS);
+		assertEquals("Should not have received any errors", null, error.get());
+		assertEquals("Wrong number of received messages", expectedMessages, receivedMessagesCounter.get());
+		assertTrue("Did not receive expected messages within 10 seconds", allMessagesReceived);
+		vertx.close();
+	}
+
+	/**
+	 * This test currently fails because the server is not able to chunk the message
+	 */
+	@Test
+	public void testLargeResponseMultipleFrames() throws Exception {
 		String vertxHost = "localhost";
 		int vertxPort = 8083;
 
