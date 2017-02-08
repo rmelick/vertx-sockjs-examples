@@ -91,7 +91,7 @@ public class SockJSClientSendTest {
 		WebSocketSession session = setupSpringSockjsClient(vertxHost, vertxPort, messageCountDown,
 				receivedMessagesCounter, error);
 
-		int approximateMessageKilobytes = 10_000;
+		int approximateMessageKilobytes = 10;
 		session.sendMessage(new TextMessage(getLargeMessage(approximateMessageKilobytes)));
 		messageCountDown.await(10, TimeUnit.SECONDS);
 		assertEquals("Received incorrect error", "Transport error Connection reset by peer", error.get());
