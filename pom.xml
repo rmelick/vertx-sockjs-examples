@@ -19,13 +19,13 @@
 		<dependency>
 			<groupId>io.vertx</groupId>
 			<artifactId>vertx-core</artifactId>
-			<version>3.3.3</version>
+			<version>3.3.4</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>io.vertx</groupId>
 			<artifactId>vertx-web</artifactId>
-			<version>3.3.3</version>
+			<version>3.3.4</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
