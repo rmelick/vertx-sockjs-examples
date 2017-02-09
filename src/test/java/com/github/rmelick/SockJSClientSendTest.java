@@ -6,7 +6,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.google.common.base.Splitter;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
@@ -42,7 +41,7 @@ import static org.junit.Assert.assertEquals;
  */
 public class SockJSClientSendTest {
 	private static final Logger LOGGER = LoggerFactory.getLogger(SockJSClientSendTest.class);
-	public static final int TEST_WAIT_TIME_MILLIS = 1_000;
+	private static final int TEST_WAIT_TIME_MILLIS = 5_000; // make sure that no extra messages arrive
 
 	/**
 	 * This test demonstrates a simple test, to make sure that the spring client and vertx server can communicate
@@ -70,11 +69,11 @@ public class SockJSClientSendTest {
 	}
 
 	/**
-	 * This test shows requests that fail because the they are too large for the tomcat websocket to handle.
-	 * It shows that clients need to break up their messages into frames
+	 * Spring / jetty will break this single large request up into multiple frames, which then should be
+	 * recombined on the vertx server side.
 	 */
 	@Test
-	public void testLargeRequestSingleFrame() throws Exception {
+	public void testLargeRequest() throws Exception {
 		String vertxHost = "localhost";
 		int vertxPort = 8081;
 
@@ -92,40 +91,6 @@ public class SockJSClientSendTest {
 
 		Thread.sleep(TEST_WAIT_TIME_MILLIS);
 		assertEquals("Received error", null, error.get());
-		assertEquals("Wrong number of received messages", expectedMessages, receivedMessagesCounter.get());
-
-		httpServer.close();
-	}
-
-	/**
-	 * This test should succeed because the client has broken the large message up into smaller frames/pieces/chunks.
-	 * The client should only receive a single reply from the server though, as the server is supposed to recombine
-	 * the pieces into a single message.
-	 */
-	@Test
-	public void testLargeRequestMultipleFrame() throws Exception {
-		String vertxHost = "localhost";
-		int vertxPort = 8082;
-
-		// set up server
-		HttpServer httpServer = setupVertxSockjsServer(vertxHost, vertxPort, new FixedReplySocketHandler(Buffer.buffer("FIXED_REPLY")));
-
-
-		int approximateMessageKilobytes = 10;
-		List<TextMessage> multipleFrames = splitIntoMessages(getLargeMessage(approximateMessageKilobytes));
-
-		// set up client
-		int expectedMessages = 1;
-		AtomicLong receivedMessagesCounter = new AtomicLong(0);
-		AtomicReference<String> error = new AtomicReference<>();
-		WebSocketSession session = setupSpringSockjsClient(vertxHost, vertxPort, receivedMessagesCounter, error);
-
-		for (TextMessage frame : multipleFrames) {
-			session.sendMessage(frame);
-		}
-
-		Thread.sleep(TEST_WAIT_TIME_MILLIS);
-		assertEquals("Should not have received any errors", null, error.get());
 		assertEquals("Wrong number of received messages", expectedMessages, receivedMessagesCounter.get());
 
 		httpServer.close();
@@ -157,17 +122,6 @@ public class SockJSClientSendTest {
 		assertEquals("Should not have received any errors", null, error.get());
 		assertEquals("Wrong number of received messages", expectedMessages, receivedMessagesCounter.get());
 		httpServer.close();
-	}
-
-	private List<TextMessage> splitIntoMessages(String fullText) {
-		List<TextMessage> messages = new ArrayList<>();
-		List<String> splitStrings = new ArrayList<>(Splitter.fixedLength(1024).splitToList(fullText));
-		String last = splitStrings.remove(splitStrings.size() - 1);
-		for (String individualMessage : splitStrings) {
-			messages.add(new TextMessage(individualMessage, false));
-		}
-		messages.add(new TextMessage(last, true));
-		return messages;
 	}
 
 	private String getLargeMessage(int approximateMessageKilobytes) {
@@ -223,7 +177,7 @@ public class SockJSClientSendTest {
 		private final AtomicLong messageCounter;
 		private final AtomicReference<String> error;
 
-		public CountingSocketHandler(AtomicLong messageCounter,	AtomicReference<String> error) {
+		CountingSocketHandler(AtomicLong messageCounter,	AtomicReference<String> error) {
 			this.messageCounter = messageCounter;
 			this.error = error;
 		}
@@ -232,6 +186,7 @@ public class SockJSClientSendTest {
 		public void handleMessage(WebSocketSession session, WebSocketMessage<?> message) throws Exception {
 			try {
 				messageCounter.incrementAndGet();
+				LOGGER.info("Client received message of size {}", message.getPayloadLength());
 				super.handleMessage(session, message);
 			} catch (Throwable t) {
 				error.set("Exception while processing message " + t.getMessage());
@@ -271,7 +226,7 @@ public class SockJSClientSendTest {
 	private static class FixedReplySocketHandler implements Handler<SockJSSocket> {
 		private final Buffer reply;
 
-		public FixedReplySocketHandler(Buffer reply) {
+		FixedReplySocketHandler(Buffer reply) {
 			this.reply = reply;
 		}
 
